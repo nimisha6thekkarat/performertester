@@ -3,9 +3,15 @@ import streamlit as st
 from bs4 import BeautifulSoup
 import pandas as pd
 import matplotlib.pyplot as plt
+from PIL import Image
 
-st.set_page_config(page_title="StresStimulus Report Comparator", layout="wide")
-st.title("📊 StresStimulus Performance Report Comparator")
+# Load and display logo
+logo = Image.open("kpmg_logo.png")
+st.image(logo, width=180)
+st.markdown("---")  # adds a divider line below the logo
+
+st.set_page_config(page_title="StresStimulus Performance Reports Comparison Tool", layout="wide")
+st.title("📊 StresStimulus Performance Reports Comparison Tool")
 
 uploaded_files = st.file_uploader(
     "Upload one or more StresStimulus HTML reports",
@@ -157,37 +163,55 @@ if uploaded_files and len(uploaded_files) >= 1:
         styled_df = combined_df.style.applymap(highlight_sla, subset=combined_df.columns[1:])
         st.dataframe(styled_df, use_container_width=True)
 
-        # ---------------- SLA Pie Chart ----------------
-        st.subheader("🥧 SLA Compliance Distribution")
+    # ---------------- SLA Pie Charts Per Report ----------------
+    st.subheader("🥧 SLA Compliance per Report")
 
-        # Combine all report columns to get total transactions and count SLA breaches
-        all_values = combined_df.melt(id_vars=["Transaction name"], var_name="Report", value_name="Avg(s)")
-        all_values["Within SLA"] = all_values["Avg(s)"] <= sla_value
+    colors = ["#90ee90", "#ff9999"]  # Green = within SLA, Red = above SLA
 
-        within_sla = all_values["Within SLA"].sum()
-        above_sla = len(all_values) - within_sla
+    # Display charts in rows of up to 5 per row
+    cols_per_row = 5
+    report_items = list(transactions_dict.items())
 
-        labels = ["Within SLA", "Above SLA"]
-        sizes = [within_sla, above_sla]
-        colors = ["#90ee90", "#ff9999"]
+    for i in range(0, len(report_items), cols_per_row):
+        row_reports = report_items[i:i + cols_per_row]
+        cols = st.columns(len(row_reports))  # Create one column per chart
 
-        fig, ax = plt.subplots(figsize=(5, 5))
-        wedges, texts, autotexts = ax.pie(
-            sizes,
-            labels=labels,
-            autopct="%1.1f%%",
-            startangle=90,
-            colors=colors,
-            textprops={"color": "black", "fontsize": 11},
-        )
-        ax.set_title("SLA Compliance Across Transactions", fontsize=13)
-        st.pyplot(fig)
+        for col, (report_name, df_txn) in zip(cols, row_reports):
+            df_txn_numeric = pd.to_numeric(df_txn, errors="coerce")
+            within_sla = (df_txn_numeric <= sla_value).sum()
+            above_sla = (df_txn_numeric > sla_value).sum()
 
+            labels = ["Within SLA", "Above SLA"]
+            sizes = [within_sla, above_sla]
+
+            fig, ax = plt.subplots(figsize=(2.5, 2.5))  # smaller size
+            ax.pie(
+                sizes,
+                labels=None,  # remove labels for compact layout
+                autopct="%1.0f%%",
+                startangle=90,
+                colors=colors,
+                textprops={"color": "black", "fontsize": 8},
+            )
+            ax.set_title(report_name, fontsize=9)
+            col.pyplot(fig)
+    
     # ---------------- Error Matrix ----------------
     if error_rows:
         st.header("🧩 Error Matrix")
+
         df_error_matrix = pd.concat(error_rows, ignore_index=True)
+
+        # Convert all values to strings and replace 'None' or NaN with blank
+        df_error_matrix = df_error_matrix.astype(str).replace(["None", "nan", "NaN"], "")
+
+        # Show Testcase Name only once per group
+        df_error_matrix["Testcase Name"] = df_error_matrix["Testcase Name"].mask(
+            df_error_matrix["Testcase Name"].duplicated()
+        )
+
         st.dataframe(df_error_matrix, use_container_width=True)
+
     else:
         st.warning("⚠️ No Top Errors section found — check report structure or encoding differences.")
 
